@@ -2,40 +2,38 @@
 #include <util/delay.h>
 #include <stdbool.h>
 
-uint8_t delayCounter = 0, displayData = 1, currentEffect = 0;
-uint16_t timePressed = 0;
-uint8_t hexPattern = 0x00;
-uint8_t maskPattern = 0x01;
-bool ascending = true;
-bool isKeyPressed = false;
+uint8_t delayCounter = 0, displayData = 1, effectIndex = 0;
+uint16_t longPressTime = 0;
+uint8_t displayValue = 0x00;
+uint8_t displayMask = 0x01;
+bool ascendingOrder = true;
+bool isButtonPressed = false;
 bool isEffectStopped = false;
 
+//-----------------------------------------------------------Effect communication
 void changeEffect(uint8_t keyPressed) {
     if (keyPressed == 0) {
-        currentEffect += 1;
-        if (currentEffect > 4) {
-            currentEffect = 0;
+        effectIndex++;
+        if (effectIndex > 4) {
+            effectIndex = 0;
         }
         delayCounter = 0;
         displayData = 0;
-        hexPattern = 0x00;
-        if (currentEffect == 3) {
-            hexPattern = 0x0F;
+        displayValue = 0x00;
+        if (effectIndex == 3) {
+            displayValue = 0x0F;
         }
-        ascending = true;
+        ascendingOrder = true;
     }
 }
 
 void stopEffect(uint8_t keyPressed) {
     if (keyPressed == 0) {
-        if (isEffectStopped == false) {
-            isEffectStopped = true;
-        } else {
-            isEffectStopped = false;
-        }
+        isEffectStopped = !isEffectStopped;
     }
 }
 
+//-----------------------------------------------------------Effects
 void runningFire(void) {
     if (++delayCounter > 20) {
         delayCounter = 0;
@@ -62,44 +60,44 @@ void runningFireReverse(void) {
 
 void fillingLine(void) {
     if (++delayCounter > 20) {
-        if (ascending == true) {
+        if (ascendingOrder) {
             delayCounter = 0;
-            PORTD = hexPattern;
-            hexPattern |= maskPattern;
-            maskPattern <<= 1;
+            PORTD = displayValue;
+            displayValue |= displayMask;
+            displayMask <<= 1;
         } else {
             delayCounter = 0;
-            PORTD = hexPattern;
-            hexPattern &= maskPattern;
-            maskPattern = (maskPattern << 1) | 0x01;
+            PORTD = displayValue;
+            displayValue &= displayMask;
+            displayMask = (displayMask << 1) | 0x01;
         }
-        if (hexPattern == 0xFF) {
-            ascending = false;
-        } else if (hexPattern == 0x00) {
-            maskPattern = 0x01;
-            ascending = true;
+        if (displayValue == 0xFF) {
+            ascendingOrder = false;
+        } else if (displayValue == 0x00) {
+            displayMask = 0x01;
+            ascendingOrder = true;
         }
     }
 }
 
 void johnsonCounter(void) {
     if (++delayCounter > 20) {
-        if (ascending == true) {
+        if (ascendingOrder) {
             delayCounter = 0;
-            PORTD = hexPattern;
-            hexPattern |= maskPattern;
-            maskPattern <<= 1;
+            PORTD = displayValue;
+            displayValue |= displayMask;
+            displayMask <<= 1;
         } else {
             delayCounter = 0;
-            PORTD = hexPattern;
-            hexPattern &= ~maskPattern;
-            maskPattern = (maskPattern << 1) | 0x01;
+            PORTD = displayValue;
+            displayValue &= ~displayMask;
+            displayMask = (displayMask << 1) | 0x01;
         }
-        if (hexPattern == 0xFF) {
-            ascending = false;
-        } else if (hexPattern == 0x00) {
-            maskPattern = 0x01;
-            ascending = true;
+        if (displayValue == 0xFF) {
+            ascendingOrder = false;
+        } else if (displayValue == 0x00) {
+            displayMask = 0x01;
+            ascendingOrder = true;
         }
     }
 }
@@ -107,12 +105,12 @@ void johnsonCounter(void) {
 void goByTwo(void) {
     if (++delayCounter > 20) {
         delayCounter = 0;
-        PORTD = hexPattern;
-
-        hexPattern = ((hexPattern << 1) & 0xFE) | ((hexPattern >> 7) & 0x01);
+        PORTD = displayValue;
+        displayValue = ((displayValue << 1) & 0xFE) | ((displayValue >> 7) & 0x01);
     }
 }
 
+//-----------------------------------------------------------Button press
 void scanKey(void) {
     static uint8_t shiftRegister;
     shiftRegister <<= 1;
@@ -120,48 +118,54 @@ void scanKey(void) {
         shiftRegister |= 1;
     }
     if ((shiftRegister & 0x07) == 0x04) {
-        isKeyPressed = true;
+        isButtonPressed = true;
     }
     if ((shiftRegister & 0x0F) == 0x03) {
-        isKeyPressed = false;
-        if (timePressed > 1600) {
-            if (isEffectStopped == true) {
+        isButtonPressed = false;
+        if (longPressTime > 1600) {
+            if (isEffectStopped) {
                 changeEffect(0);
                 stopEffect(0);
             }
         } else {
             stopEffect(0);
         }
-        timePressed = 0;
+        longPressTime = 0;
     }
 }
 
+//-----------------------------------------------------------Main
 int main(void) {
     UCSR0B = 0;
     DDRD = 0xFF;
     DDRB = 0;
+
     for (;;) {
-        if (isEffectStopped == false) {
-            if (currentEffect == 0) {
-                runningFire();
-            }
-            if (currentEffect == 1) {
-                runningFireReverse();
-            }
-            if (currentEffect == 2) {
-                johnsonCounter();
-            }
-            if (currentEffect == 3) {
-                goByTwo();
-            }
-            if (currentEffect == 4) {
-                fillingLine();
+        if (!isEffectStopped) {
+            switch (effectIndex) {
+                case 0:
+                    runningFire();
+                    break;
+                case 1:
+                    runningFireReverse();
+                    break;
+                case 2:
+                    johnsonCounter();
+                    break;
+                case 3:
+                    goByTwo();
+                    break;
+                case 4:
+                    fillingLine();
+                    break;
+                default:
+                    break;
             }
         }
 
         scanKey();
-        if (isKeyPressed == true) {
-            timePressed += 10;
+        if (isButtonPressed) {
+            longPressTime += 10;
         }
         _delay_ms(10);
     }
